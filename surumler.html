@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KUSAK Ltd. | kusak-infra Versions</title>
+    <meta name="description" content="KUSAK-INFRA version history and README archive. Open-source and internal releases.">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <header class="site-header">
+        <h1>KUSAK LTD</h1>
+        <p>Deterministic execution. Zero compromise.</p>
+    </header>
+
+    <nav>
+        <a href="index.html">Home</a>
+        <a href="surumler.html">kusak-infra</a>
+        <a href="yyy.html">YYY</a>
+        <a href="neta-leo.html">NETA LEO</a>
+        <a href="founder.html">Who is Yunus Kuşak</a>
+    </nav>
+
+    <div class="container">
+
+        <h2>kusak-infra Versions</h2>
+
+        <div class="kart-kutu" style="background-color: #f8fafc;">
+            <p>
+                <b>Quick Access:</b><br>
+                <a href="#v30">Release 30 — Open Source</a> &nbsp;|&nbsp;
+                <a href="#v71">Release 71 — Closed Source</a>
+            </p>
+        </div>
+
+        <hr>
+
+        <!-- ===== 30th Release ===== -->
+        <a name="v30"></a>
+        <h2>Release 30 — Lock‑Free HFT Infrastructure Prototype <span style="font-size: 14px; color: #27ae60; font-weight: bold;">[Open Source]</span></h2>
+        <p><strong>Release Date:</strong> 10 May 2026 &nbsp;|&nbsp; <strong>Status:</strong> Public on GitHub</p>
+        <p><strong>Repository:</strong> <a href="https://github.com/yunuskusak/kusak-infra.git" target="_blank">https://github.com/yunuskusak/kusak-infra.git</a></p>
+
+        <div class="kart-kutu">
+            <p><strong>C++17 · Binance WebSocket · SPSC Ring Buffer · Sub‑millisecond Latency</strong></p>
+            <p>
+                <strong>KUSAK-INFRA</strong> is the open-source infrastructure core of KUSAK — an algorithmic trading bot / HFT engine built on Binance.
+                Written in C++17 with lock‑free architecture, sub‑millisecond latency, and zero heap allocations on the hot path.
+                Built by <a href="https://yunuskusak.cloud" target="_blank">Kusak Ltd.</a>
+            </p>
+            <p>
+                This is the first public release of the infrastructure layer that powers KUSAK — a proprietary high‑frequency trading engine built and operated by Kusak Ltd.
+                We are open‑sourcing this specific version because it represents the raw engineering foundation: how we connect, how we measure, and how we move data without locks.
+                It does not contain any trading strategy, signal generation, or alpha logic.
+            </p>
+        </div>
+
+        <h3>What This Is</h3>
+        <p>
+            KUSAK V30 is a <strong>hardware‑aware, lock‑free market data pipeline</strong> for Binance's WebSocket API. It was the first version where we replaced every mutex, every <code>std::queue</code>, and every <code>sleep_for</code> with deterministic, allocation‑free primitives.
+        </p>
+        <p>
+            The result: a single C++17 translation unit that ingests live market data, processes it through a lock‑free SPSC ring buffer, and dispatches it to a strategy thread — with no heap allocations on the hot path and nanosecond‑resolution timestamps.
+        </p>
+        <p><em>This is the engine chassis. The direction it drives is not included.</em></p>
+
+        <h3>Architecture</h3>
+        <pre style="background: #f4f6f9; padding: 15px; border-left: 4px solid #3498DB; overflow-x: auto; font-family: 'Courier New', monospace; font-size: 13px;">
+Binance WebSocket (TLS/SSL)
+        │
+        ▼
+  TLSSocket (poll‑based, OpenSSL)
+        │
+        ▼
+ SpscRing&lt;MarketEvent&gt;          ← lock‑free, alignas(64), zero heap
+        │
+        ▼
+  Strategy Thread               ← reads events, no blocking calls
+        │
+        ▼
+ OrderChannel (mutex+queue)     ← V30 bottleneck, later replaced
+        │
+        ▼
+  Order Thread → Binance REST</pre>
+
+        <h3>Core Components</h3>
+        <ul>
+            <li><strong>SpscRing&lt;N&gt;</strong> — Single‑Producer Single‑Consumer Ring Buffer. No mutex. No condition variable. No heap allocation. Cache‑line aligned atomics with explicit <code>memory_order_acquire</code> / <code>memory_order_release</code> semantics.</li>
+            <li><strong>LogRing&lt;N&gt;</strong> — Async Logging Pipeline. All I/O is off the hot path. Log messages are pushed to a second SPSC ring. A dedicated log thread drains it.</li>
+            <li><strong>FORCE_INLINE + Branch Prediction Hints</strong> — Every function in the hot path is force‑inlined. Branch prediction hints are applied at every conditional that has a known dominant path.</li>
+            <li><strong>Monotonic Nanosecond Timestamps</strong> — Uses <code>CLOCK_MONOTONIC_RAW</code> to bypass NTP adjustments. All latency measurements in this codebase use this, not <code>std::chrono</code>.</li>
+            <li><strong>TLS WebSocket Client</strong> — Header‑only Binance WebSocket client built on raw OpenSSL. Supports full TLS handshake, reconnect with exponential backoff, AggTrade and BookTicker stream parsing.</li>
+        </ul>
+
+        <h3>Known Bottlenecks in This Version</h3>
+        <p><em>This is a prototype. We are publishing it with its flaws intact because hiding them would be dishonest.</em></p>
+        <ol>
+            <li><strong>Order channel uses <code>std::mutex</code> + <code>std::queue</code></strong> — primary latency bottleneck. Later replaced with lock‑free <code>OrderSpscRing</code>.</li>
+            <li><strong>WebSocket uses <code>poll()</code> with 200ms timeout</strong> — later moved to <code>epoll</code> with edge‑triggered mode.</li>
+            <li><strong><code>std::chrono::steady_clock</code> in cooldown logic</strong> — later replaced with atomic nanosecond counters using <code>CLOCK_MONOTONIC_RAW</code>.</li>
+            <li><strong><code>std::string</code> in order parameters</strong> — later replaced with stack‑allocated <code>FixedString&lt;N&gt;</code>.</li>
+        </ol>
+
+        <h3>What Is NOT in This Repository</h3>
+        <ul>
+            <li>Any signal generation logic</li>
+            <li>Order Book Imbalance (OBI) calculations</li>
+            <li>VPIN‑based direction decisions</li>
+            <li>Regime classification logic</li>
+            <li>Parameter optimization results</li>
+            <li>Backtest data or performance statistics</li>
+        </ul>
+
+        <h3>Build</h3>
+        <p><strong>Requirements:</strong> GCC 11+ or Clang 14+, CMake 3.20+, OpenSSL 3.x, libcurl</p>
+        <pre style="background: #f4f6f9; padding: 15px; border-left: 4px solid #3498DB; overflow-x: auto; font-family: 'Courier New', monospace; font-size: 13px;">
+git clone https://github.com/yunuskusak/kusak-infra.git
+cd kusak-infra
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)</pre>
+        <p><strong>Configuration:</strong> Copy <code>kusak_config.json.example</code> to <code>kusak_config.json</code>. Set <code>dry_run: true</code> before connecting to any live exchange.</p>
+
+        <h3>Why We're Publishing This</h3>
+        <p>First: the C++ HFT community has a culture of hiding infrastructure behind NDAs and mythology. Most "HFT" code on GitHub is neither high‑frequency nor production‑grade. We wanted to show what a real first iteration looks like — including the parts that are wrong.</p>
+        <p>Second: recruiting. If you read this codebase and immediately understand why <code>poll()</code> is wrong here, why <code>std::queue</code> with a mutex is unacceptable on this path, and what the correct fix is — we would like to talk to you.</p>
+
+        <h3>License</h3>
+        <p>MIT. Use it, study it, improve it. The only thing we ask: if you build something that makes money using ideas from this codebase, consider that it took us considerably more than one evening to get here.</p>
+
+        <p style="text-align: right; font-style: italic; color: #7f8c8d;">Kusak Ltd. — Building deterministic execution infrastructure.</p>
+
+        <hr>
+
+        <!-- ===== 71st Release ===== -->
+        <a name="v71"></a>
+        <h2>Release 71 — Low‑Latency Market‑Data Ingestion &amp; Order‑Routing Engine <span style="font-size: 14px; color: #c0392b; font-weight: bold;">[Closed Source]</span></h2>
+        <p><strong>Release Date:</strong> 10 May 2026 &nbsp;|&nbsp; <strong>Status:</strong> Internal — README public, source closed</p>
+
+        <div class="kart-kutu">
+            <p><strong>Low‑latency market‑data ingestion and order‑routing engine for Binance, written in C++20.</strong></p>
+            <p>
+                KUSAK-INFRA V71 is a market‑data ingestion and order‑routing engine for centralized cryptocurrency exchanges,
+                built against Binance's Spot and USDT‑margined Futures REST and WebSocket APIs. The problem it addresses is
+                narrow and specific: turn a public WebSocket feed into a parsed, timestamped, risk‑evaluated event stream
+                with deterministic, low‑overhead processing, and route the resulting decisions through an order path that
+                validates against exchange constraints before anything reaches the network.
+            </p>
+            <p>
+                C++20 is used for concrete reasons visible in the codebase, not just general performance.
+                <code>std::span</code> is used throughout the backtesting, walk‑forward, and buffer‑handling code as a
+                non‑owning, bounds‑aware view over tick data, replacing raw pointer/length pairs at those interfaces.
+                The standardized <code>[[likely]]</code>/<code>[[unlikely]]</code> attributes are used on several hot paths
+                as a portable alternative to compiler‑specific branch hints. Combined with manual control over memory layout,
+                atomics, and object lifetime, this gives the ingestion path predictable behavior without a managed runtime's
+                allocation or collection pauses.
+            </p>
+            <p>
+                The design keeps three concerns structurally separate: a low‑latency ingestion core that owns parsing and
+                timing, a risk/execution layer that gates and routes orders, and an offline research toolchain — a separate,
+                opt‑in build target — used for backtesting and parameter search before any change reaches the live path.
+            </p>
+        </div>
+
+        <h3>Architecture Status</h3>
+        <p>
+            The build produces two independent targets. <code>kusak_v71</code>, built by default, is the live engine:
+            it owns the complete path from WebSocket ingestion through risk scoring to order submission, including a
+            <code>RestOrderClient</code> instance held as <code>live_order_client</code>. Its current operating configuration
+            runs with <code>dry_run</code> enabled against Binance's production endpoints (<code>testnet=false</code>) —
+            market data, account state, and exchange filters are read live, and order requests are constructed, signed,
+            and risk‑scored through the same code path a submitted order would take, but transmission is gated behind the
+            dry_run flag. This is a validation policy, not a stand‑in for missing functionality.
+        </p>
+        <p>
+            A second, opt‑in target (<code>research</code>, built via <code>-DBUILD_RESEARCH=ON</code>) is a separate binary
+            covering backtesting, parameter optimization, and paper trading against recorded or replayed data. It does not
+            touch the live order path.
+        </p>
+
+        <h3>Low‑Latency Ingestion Core</h3>
+
+        <h4>Zero‑Copy Ring Buffer</h4>
+        <p>
+            The WebSocket receive buffer is a virtual‑memory‑mirrored ring: an anonymous file descriptor from
+            <code>memfd_create()</code> is mapped twice, via two consecutive <code>mmap()</code> calls, onto the same
+            backing pages at adjacent virtual addresses. This produces one contiguous address range of size
+            <code>2×capacity</code>, so a read that would otherwise need to wrap around the end of the buffer instead
+            continues transparently into the mirrored second mapping. The parser never special‑cases a wrap boundary and
+            never calls <code>memcpy()</code>/<code>memmove()</code> to reassemble a split message. The
+            <code>memfd_create()</code> + double‑<code>mmap()</code> setup happens once, at construction; nothing on the
+            steady‑state receive path allocates or remaps memory.
+        </p>
+
+        <h4>Branchless DFA Parser</h4>
+        <p>
+            Incoming WebSocket payloads (<code>aggTrade</code>, <code>bookTicker</code>, depth updates) are parsed by
+            hand‑written, single‑pass state‑machine parsers rather than a general‑purpose JSON library. Each parser walks
+            the input once, character by character, using masked and XOR‑based conditional updates in place of
+            <code>if</code>/<code>else</code> branching on the digit‑accumulation path; the loop contains exactly one
+            branch, used only to detect the terminating character. No heap allocation occurs on this path — no
+            <code>std::string</code>, <code>std::vector</code>, or <code>new</code>/<code>malloc</code>. General‑purpose
+            JSON parsing (<code>nlohmann::json</code>) is still used elsewhere in the system, for lower‑frequency REST
+            traffic such as exchange metadata and order acknowledgements, where the latency budget is different.
+        </p>
+
+        <h4>Fixed‑Point Numeric Model</h4>
+        <p>
+            Prices and quantities on the ingestion path are represented as <code>int64_t</code>, scaled by
+            <code>10^8</code>, rather than <code>double</code>. The parser accumulates integer and fractional digits
+            separately and combines them with a lookup‑table scale factor once eight fractional digits have been consumed;
+            digits beyond the eighth are discarded through the same branchless mask rather than a separate truncation
+            check, closing a prior failure mode where a ninth digit could silently shift the scale of the resulting value.
+            This keeps comparisons and arithmetic on the hot path exact and reproducible, and avoids floating‑point rounding
+            and NaN propagation. (Order construction against the REST layer, downstream of ingestion, is implemented with
+            <code>double</code>, not the fixed‑point type used on the ingestion path.)
+        </p>
+
+        <h4>Hardware Timestamping</h4>
+        <p>
+            Latency‑sensitive timestamps are taken from the CPU's Time Stamp Counter via <code>__rdtscp()</code>, paired
+            with <code>_mm_lfence()</code> to serialize execution so the counter read isn't reordered relative to the code
+            being measured. This avoids a <code>clock_gettime()</code> syscall on the per‑message path.
+            <code>clock_gettime(CLOCK_MONOTONIC_RAW, ...)</code> is still used, but only for periodic calibration to
+            correlate TSC cycles back to wall‑clock time, not on every timestamp taken.
+        </p>
+
+        <h4>TLS &amp; Network Stack</h4>
+        <p>
+            The WebSocket client manages its own <code>SSL_CTX</code> lifecycle directly against OpenSSL rather than through
+            a higher‑level HTTP library: context creation pinned to a TLS 1.2 minimum, default verify paths, peer
+            verification enabled, and explicit <code>SSL_CTX_free()</code> on teardown. ALPN is negotiated explicitly for
+            <code>http/1.1</code>, since the WebSocket upgrade handshake depends on it and a ClientHello without an ALPN
+            extension is more likely to be handled unpredictably by intermediary CDNs or WAFs in front of the exchange's
+            edge.
+        </p>
+
+        <h3>Additional Components</h3>
+        <ul>
+            <li><strong>Order Routing (RestOrderClient)</strong> — Builds and submits requests to Binance's REST order endpoints (<code>/api/v3/order</code> for spot, <code>/fapi/v1/order</code> for USDT‑margined futures), and checks the HTTP status and response body for a returned order ID and status before treating an order as acknowledged.</li>
+            <li><strong>Exchange Filter Validation</strong> — Before a request is sent, it is checked locally against a cached copy of the symbol's exchange filters — tick size, step size, min/max price and quantity, and minimum notional — so a malformed order is rejected before it reaches the exchange.</li>
+            <li><strong>Risk Management &amp; Circuit Breaker</strong> — A risk‑scoring gate combines order‑book imbalance, spread, depth, a VPIN‑style toxicity estimate, and a regime‑model probability into a single score, and is written to fail closed: a non‑finite (NaN) value in any contributing signal forces a veto rather than a pass‑through.</li>
+            <li><strong>Kelly Criterion Position Sizing</strong> — Position size can be computed from a half‑Kelly formula against a rolling window of recent trade P&amp;L, clamped to a configured fractional range, with fixed‑percentage sizing as the fallback mode.</li>
+            <li><strong>Genetic Optimization</strong> — The research toolchain includes a generational genetic‑algorithm search over strategy parameters — tournament/roulette selection, crossover, mutation, and elitism.</li>
+            <li><strong>Paper Trading &amp; Replay</strong> — Recorded tick data can be replayed through the same event‑processing path via an <code>mmap</code>‑backed replay engine, and a separate paper‑trading mode simulates fills, P&amp;L, and circuit‑breaker behavior.</li>
+            <li><strong>Telemetry</strong> — Runtime metrics are written continuously to both a CSV sink and a Prometheus text‑format file. Trade lifecycle events can additionally be pushed out‑of‑band via Telegram bot or Slack webhook.</li>
+        </ul>
+
+        <h3>Build</h3>
+        <p><strong>Requirements:</strong> Linux, CMake 3.16+, C++20 compiler (GCC or Clang), OpenSSL and libcurl development headers, x86‑64 CPU</p>
+        <pre style="background: #f4f6f9; padding: 15px; border-left: 4px solid #3498DB; overflow-x: auto; font-family: 'Courier New', monospace; font-size: 13px;">
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+
+# Optional research binary:
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_RESEARCH=ON
+cmake --build build -j$(nproc)</pre>
+        <p><code>nlohmann/json</code> is fetched automatically at configure time via CMake's <code>FetchContent</code>. OpenSSL and CURL are expected to be present on the build system.</p>
+
+        <p style="text-align: center; margin-top: 30px;">
+            <a href="index.html">[ Back to Home ]</a>
+        </p>
+
+    </div>
+
+    <footer>
+        <p>&copy; 2026 KUSAK Ltd. — Registered in England &amp; Wales. Deterministic execution. Zero compromise.</p>
+    </footer>
+
+</body>
+</html>
