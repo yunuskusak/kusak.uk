@@ -334,7 +334,7 @@ footer a:hover {
   color: #2C3E50;
 }
 
-/* === EKSİK SINIFLAR: Butonlar ve Grid (HTML ile uyumlu) === */
+
 .btn {
   display: inline-block;
   background-color: #3498DB;
@@ -385,7 +385,7 @@ footer a:hover {
   color: #5A6C7D;
   margin-bottom: 10px;
 }
-/* === İLETİŞİM TABLOSU === */
+
 .contact-table {
   width: 100%;
   border-collapse: collapse;
